@@ -1,4 +1,6 @@
 ﻿@page "/"
+@using System.ComponentModel
+@using System.Diagnostics
 @using System.IO
 @using HandheldLauncher.App.Services
 @implements IDisposable
@@ -7,35 +9,50 @@
 
 <!-- Launcher Tiles -->
 <div class="tile-grid">
-    <RadzenCard class="tile" Click="@LaunchSteam">
-        <div class="tile-body">
-            <img src="@SteamIcon" alt="Steam" />
-            <div class="tile-title">Steam</div>
-        </div>
-        <div class="tile-actions">
-            <RadzenButton Size="ButtonSize.Small" Icon="edit" Click="@SetSteamExe" />
-        </div>
-    </RadzenCard>
+    <!-- Steam tile -->
+    <div class="tile-wrapper" @onclick="LaunchSteam" role="button" tabindex="0">
+        <RadzenCard class="tile">
+            <div class="tile-body">
+                <img src="@SteamIcon" alt="Steam" />
+                <div class="tile-title">Steam</div>
+            </div>
+            <div class="tile-actions">
+                <RadzenButton Size="ButtonSize.Small" Icon="edit"
+                              @onclick:stopPropagation="true"
+                              Click="@SetSteamExe" />
+            </div>
+        </RadzenCard>
+    </div>
 
-    <RadzenCard class="tile" Click="@LaunchBattleNet">
-        <div class="tile-body">
-            <img src="@BattleNetIcon" alt="Battle.net" />
-            <div class="tile-title">Battle.net</div>
-        </div>
-        <div class="tile-actions">
-            <RadzenButton Size="ButtonSize.Small" Icon="edit" Click="@SetBattleNetExe" />
-        </div>
-    </RadzenCard>
+    <!-- Battle.net -->
+    <div class="tile-wrapper" @onclick="LaunchBattleNet" role="button" tabindex="0">
+        <RadzenCard class="tile">
+            <div class="tile-body">
+                <img src="@BattleNetIcon" alt="Battle.net" />
+                <div class="tile-title">Battle.net</div>
+            </div>
+            <div class="tile-actions">
+                <RadzenButton Size="ButtonSize.Small" Icon="edit"
+                              @onclick:stopPropagation="true"
+                              Click="@SetBattleNetExe" />
+            </div>
+        </RadzenCard>
+    </div>
 
-    <RadzenCard class="tile" Click="@LaunchXbox">
-        <div class="tile-body">
-            <img src="@XboxIcon" alt="Xbox App" />
-            <div class="tile-title">Xbox</div>
-        </div>
-        <div class="tile-actions">
-            <RadzenButton Size="ButtonSize.Small" Icon="edit" Click="@SetXboxExe" />
-        </div>
-    </RadzenCard>
+    <!-- Xbox -->
+    <div class="tile-wrapper" @onclick="LaunchXbox" role="button" tabindex="0">
+        <RadzenCard class="tile">
+            <div class="tile-body">
+                <img src="@XboxIcon" alt="Xbox" />
+                <div class="tile-title">Xbox</div>
+            </div>
+            <div class="tile-actions">
+                <RadzenButton Size="ButtonSize.Small" Icon="edit"
+                              @onclick:stopPropagation="true"
+                              Click="@SetXboxExe" />
+            </div>
+        </RadzenCard>
+    </div>
 
     <RadzenCard class="tile" Click="@OpenGamesFolder">
         <div class="tile-body">
@@ -53,7 +70,7 @@
             <div class="sys-card-header">
                 <span class="sys-card-title">Memory</span>
                 <span class="sys-card-sub">
-                    @FormatBytes(UsedMemoryMB) used of @FormatBytes(TotalMemoryMB) (@RamPercentValue:0.0%)
+                    @FormatBytes(UsedMemoryMB) used of @FormatBytes(TotalMemoryMB) (@($"{RamPercentValue:0.0}%"))
                 </span>
             </div>
             <RadzenProgressBar Value="@RamPercentValue"
@@ -65,7 +82,7 @@
         <RadzenCard class="sys-card">
             <div class="sys-card-header">
                 <span class="sys-card-title">CPU</span>
-                <span class="sys-card-sub">@CpuPercentValue:0.0% (_Total)</span>
+                <span class="sys-card-sub">@($"{CpuPercentValue:0.0}%")</span>
             </div>
             <RadzenProgressBar Value="@CpuPercentValue"
                                ShowValue="false"
@@ -153,7 +170,7 @@
         {
             Tick();
             InvokeAsync(StateHasChanged);
-        }, null, TimeSpan.Zero, TimeSpan.FromMilliseconds(250));
+        }, null, TimeSpan.Zero, TimeSpan.FromMilliseconds(1000));
     }
 
     private void Tick()
@@ -212,9 +229,9 @@
     }
 
     // ---------- Tile actions ----------
-    private void LaunchSteam()     => TryStart(SteamPath);
-    private void LaunchBattleNet() => TryStart(BattleNetPath);
-    private void LaunchXbox()      => TryStart(XboxPath);
+    void LaunchSteam()     => LaunchTarget(SteamPath);      // SteamPath should be like C:\...\Steam.exe (or steam://open/main if you prefer)
+    void LaunchBattleNet() => LaunchTarget(BattleNetPath);  // e.g., C:\Program Files (x86)\Battle.net\Battle.net.exe
+    void LaunchXbox()      => LaunchTarget(XboxPath);       // Xbox is a Store/UWP app, protocols work better: xbox://
     private void OpenGamesFolder() => TryStart("explorer.exe", @"C:\Games");
 
     private static void TryStart(string fileName, string args = null)
@@ -337,5 +354,98 @@
         _timer?.Dispose();
         _pcMemAvailMb?.Dispose();
         _pcCpuTotal?.Dispose();
+    }
+    
+    // Call this from your tile click with the saved value (path or protocol)
+    static void LaunchTarget(string target, string args = null)
+    {
+        if (string.IsNullOrWhiteSpace(target)) return;
+
+        // Protocols (steam://, xbox://, battlenet:// etc.)
+        if (target.Contains("://"))
+        {
+            TryStartProtocol(target);
+            return;
+        }
+
+        // Plain EXE
+        if (!File.Exists(target))
+        {
+            // (Optional) try auto-detect if path missing
+            var detected = AutoDetectLauncher(target);
+            if (string.IsNullOrEmpty(detected) || !File.Exists(detected)) return;
+            target = detected;
+        }
+
+        TryStartExe(target, args);
+    }
+
+    static void TryStartExe(string exePath, string args = null)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo(exePath)
+            {
+                UseShellExecute = true,
+                WorkingDirectory = Path.GetDirectoryName(exePath) ?? Environment.CurrentDirectory
+            };
+            if (!string.IsNullOrWhiteSpace(args)) psi.Arguments = args;
+            Process.Start(psi);
+        }
+        catch (Win32Exception)
+        {
+            // show a toast or message if you want
+        }
+        catch (Exception)
+        {
+            // log/show toast
+        }
+    }
+
+    static void TryStartProtocol(string url)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+        }
+        catch { }
+    }
+    
+    static string AutoDetectLauncher(string original)
+    {
+        // Steam
+        var steam = GetRegistryValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath");
+        if (!string.IsNullOrEmpty(steam))
+        {
+            var p = Path.Combine(steam, "steam.exe");
+            if (File.Exists(p)) return p;
+        }
+
+        // Battle.net (Blizzard sometimes changes the exe name; check common locations)
+        var guesses = new[]
+        {
+            @"C:\Program Files (x86)\Battle.net\Battle.net.exe",
+            @"C:\Program Files\Battle.net\Battle.net.exe",
+            @"C:\Program Files (x86)\Battle.net\Battle.net Launcher.exe",
+            @"C:\Program Files\Battle.net\Battle.net Launcher.exe"
+        };
+        foreach (var g in guesses)
+            if (File.Exists(g)) return g;
+
+        return string.Empty;
+    }
+
+    static string GetRegistryValue(string key, string valueName)
+    {
+        try
+        {
+            var v = Microsoft.Win32.Registry.GetValue(key, valueName, "");
+            return v is string s ? s : "";
+        }
+        catch { return ""; }
     }
 }
