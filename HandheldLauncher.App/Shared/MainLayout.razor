@@ -4,20 +4,24 @@
 	<RadzenTheme Theme="material-dark" />
 </HeadContent>
 <RadzenComponents />
-<div class="page">
-	<div class="sidebar">
-		<NavMenu />
-	</div>
-
-	<main>
-		<div class="top-row px-4" style="@divStyle">
-			<a href="https://docs.microsoft.com/aspnet/" target="_blank">About</a>
+<div class="launcher-root">
+	<!-- Top Status Bar -->
+	<div class="launcher-status">
+		<div class="status-left">
+			<span class="brand">Legion Launcher</span>
 		</div>
 
-		<article class="content px-4">
-			@Body
-		</article>
-	</main>
+		<div class="status-right">
+			<span class="status-pill">@DateTime.Now.ToString("ddd, MMM d • h:mm tt")</span>
+			<span class="status-pill">Battery: @BatteryPercent%</span>
+			<RadzenButton Size="ButtonSize.Small" Icon="settings" Click="() => ToggleQuickMenu()" />
+		</div>
+	</div>
+
+	<!-- Content -->
+	<div class="launcher-content">
+		@Body
+	</div>
 </div>
 
 <RadzenDialog/>
@@ -26,11 +30,32 @@
 <RadzenTooltip/>
 
 @code {
-	private string divStyle;
+	private System.Threading.Timer? _timer;
+	private int BatteryPercent = 100;
 
 	protected override void OnInitialized()
 	{
-		base.OnInitialized();
-		divStyle = "background-color: #f7f7f7;";
+		UpdateBattery();
+		_timer = new System.Threading.Timer(_ =>
+		{
+			UpdateBattery();
+			InvokeAsync(StateHasChanged);
+		}, null, TimeSpan.Zero, TimeSpan.FromSeconds(30));
+	}
+
+	private void UpdateBattery()
+	{
+		var p = System.Windows.Forms.SystemInformation.PowerStatus;
+		BatteryPercent = (int)Math.Round(p.BatteryLifePercent * 100.0);
+	}
+
+	private void ToggleQuickMenu()
+	{
+		// hook up a future quick menu / flyout here
+	}
+
+	public void Dispose()
+	{
+		_timer?.Dispose();
 	}
 }

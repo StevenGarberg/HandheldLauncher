@@ -1,16 +1,341 @@
 ﻿@page "/"
+@using System.IO
+@using HandheldLauncher.App.Services
+@implements IDisposable
 
-<h1>Hello, world!</h1>
+<h1 class="sr-only">Launcher</h1>
 
-@Clicks clicks!
+<!-- Launcher Tiles -->
+<div class="tile-grid">
+    <RadzenCard class="tile" Click="@LaunchSteam">
+        <div class="tile-body">
+            <img src="@SteamIcon" alt="Steam" />
+            <div class="tile-title">Steam</div>
+        </div>
+        <div class="tile-actions">
+            <RadzenButton Size="ButtonSize.Small" Icon="edit" Click="@SetSteamExe" />
+        </div>
+    </RadzenCard>
 
-<RadzenButton ButtonStyle="ButtonStyle.Success" Click="@ButtonClicked" Text="Hi"/>
+    <RadzenCard class="tile" Click="@LaunchBattleNet">
+        <div class="tile-body">
+            <img src="@BattleNetIcon" alt="Battle.net" />
+            <div class="tile-title">Battle.net</div>
+        </div>
+        <div class="tile-actions">
+            <RadzenButton Size="ButtonSize.Small" Icon="edit" Click="@SetBattleNetExe" />
+        </div>
+    </RadzenCard>
+
+    <RadzenCard class="tile" Click="@LaunchXbox">
+        <div class="tile-body">
+            <img src="@XboxIcon" alt="Xbox App" />
+            <div class="tile-title">Xbox</div>
+        </div>
+        <div class="tile-actions">
+            <RadzenButton Size="ButtonSize.Small" Icon="edit" Click="@SetXboxExe" />
+        </div>
+    </RadzenCard>
+
+    <RadzenCard class="tile" Click="@OpenGamesFolder">
+        <div class="tile-body">
+            <img src="@FolderIcon" alt="Games Folder" />
+            <div class="tile-title">Games Folder</div>
+        </div>
+    </RadzenCard>
+</div>
+
+<!-- System Section -->
+<div class="system-section">
+    <div class="system-grid">
+        <!-- RAM -->
+        <RadzenCard class="sys-card">
+            <div class="sys-card-header">
+                <span class="sys-card-title">Memory</span>
+                <span class="sys-card-sub">
+                    @FormatBytes(UsedMemoryMB) used of @FormatBytes(TotalMemoryMB) (@RamPercentValue:0.0%)
+                </span>
+            </div>
+            <RadzenProgressBar Value="@RamPercentValue"
+                               ShowValue="false"
+                               Style="@GetBarStyle(RamPercentValue)" />
+        </RadzenCard>
+
+        <!-- CPU -->
+        <RadzenCard class="sys-card">
+            <div class="sys-card-header">
+                <span class="sys-card-title">CPU</span>
+                <span class="sys-card-sub">@CpuPercentValue:0.0% (_Total)</span>
+            </div>
+            <RadzenProgressBar Value="@CpuPercentValue"
+                               ShowValue="false"
+                               Style="@GetBarStyle(CpuPercentValue)" />
+        </RadzenCard>
+
+        <!-- Drives -->
+        <RadzenCard class="sys-card drives" style="grid-column: 1 / -1;">
+            <div class="sys-card-header">
+                <span class="sys-card-title">Drives</span>
+            </div>
+
+            <div class="drive-grid">
+                @foreach (var d in Drives)
+                {
+                    <div class="drive-card">
+                        <div class="drive-head">
+                            <img src="@GetDriveIcon(d)" alt="Drive" />
+                            <div>
+                                <div class="drive-name">@d.Name</div>
+                                <div class="drive-type">@d.DriveType</div>
+                            </div>
+                        </div>
+
+                        @if (d.IsReady)
+                        {
+                            <div class="drive-label">
+                                @FormatBytes(d.AvailableFreeSpace / 1024.0 / 1024.0) free of @FormatBytes(d.TotalSize / 1024.0 / 1024.0)
+                            </div>
+                            <RadzenProgressBar Value="@GetUsedPctValue(d)"
+                                               ShowValue="false"
+                                               Style="@GetBarStyle(GetUsedPctValue(d))" />
+                        }
+                        else
+                        {
+                            <div class="drive-label">Not ready</div>
+                        }
+                    </div>
+                }
+            </div>
+        </RadzenCard>
+    </div>
+</div>
 
 @code {
-    private int Clicks { get; set; }
+    // ---------- Tiles (paths + icons) ----------
+    private string SteamPath;
+    private string BattleNetPath;
+    private string XboxPath;
+
+    private string SteamIcon => GetExeIconDataUrl(SteamPath) ?? "icons/steam.png";
+    private string BattleNetIcon => GetExeIconDataUrl(BattleNetPath) ?? "icons/battlenet.png";
+    private string XboxIcon => GetExeIconDataUrl(XboxPath) ?? "icons/xbox.png";
+
+    private string FolderIcon => StockIconHelper.GetStockIconBase64(StockIconHelper.SHSTOCKICONID.SIID_FOLDER) ?? "icons/folder.png";
     
-    void ButtonClicked()
+    // ---------- System data ----------
+    private List<DriveInfo> Drives = new();
+    private System.Threading.Timer? _timer;
+
+    // Reused counters
+    private System.Diagnostics.PerformanceCounter? _pcMemAvailMb;
+    private System.Diagnostics.PerformanceCounter? _pcCpuTotal;
+
+    private double TotalMemoryMB;
+    private double UsedMemoryMB;
+    private double RamPercentValue => TotalMemoryMB <= 0 ? 0 : Math.Max(0, Math.Min(100, (UsedMemoryMB / TotalMemoryMB) * 100.0));
+    private double CpuPercentValue = 0; // 0..100
+
+    protected override void OnInitialized()
     {
-        Clicks++;
+        LoadExePaths();
+
+        Drives = DriveInfo.GetDrives().ToList();
+
+        _pcMemAvailMb = new System.Diagnostics.PerformanceCounter("Memory", "Available MBytes");
+        _ = _pcMemAvailMb.NextValue(); // prime
+
+        _pcCpuTotal = new System.Diagnostics.PerformanceCounter("Processor", "% Processor Time", "_Total");
+        _ = _pcCpuTotal.NextValue(); // prime
+
+        TotalMemoryMB = GetTotalPhysicalMemory() / 1024.0 / 1024.0;
+
+        _timer = new System.Threading.Timer(_ =>
+        {
+            Tick();
+            InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.Zero, TimeSpan.FromMilliseconds(250));
+    }
+
+    private void Tick()
+    {
+        if (_pcMemAvailMb is not null)
+        {
+            var avail = _pcMemAvailMb.NextValue(); // MB
+            UsedMemoryMB = Math.Max(0, TotalMemoryMB - avail);
+        }
+        if (_pcCpuTotal is not null)
+        {
+            var cpu = _pcCpuTotal.NextValue();     // %
+            CpuPercentValue = Math.Max(0, Math.Min(100, cpu));
+        }
+    }
+
+    // ---------- Progress color logic ----------
+    // Return a single CSS string for the 'Style' attribute.
+    private static string GetBarStyle(double percent)
+    {
+        var baseStyle = "width:100%; height:16px;";
+        var color = GetBarSeverityCss(percent);
+        return string.IsNullOrEmpty(color) ? baseStyle : $"{baseStyle} {color}";
+    }
+
+    // Sets the Radzen primary color via CSS var so the fill changes.
+    private static string GetBarSeverityCss(double percent)
+    {
+        if (percent >= 90) return "--rz-primary: var(--rz-danger);";   // red
+        if (percent >= 75) return "--rz-primary: var(--rz-warning);";  // amber
+        return string.Empty;                                           // theme default
+    }
+
+    // ---------- Drives helpers ----------
+    private static double GetUsedPctValue(DriveInfo d)
+    {
+        if (!d.IsReady || d.TotalSize == 0) return 0;
+        double used = d.TotalSize - d.AvailableFreeSpace;
+        return Math.Round((used / d.TotalSize) * 100, 1);
+    }
+
+    private static string GetDriveIcon(DriveInfo d) => d.DriveType switch
+    {
+        DriveType.CDRom     => "icons/cdrom.png",
+        DriveType.Network   => "icons/network.png",
+        DriveType.Removable => "icons/usb.png",
+        DriveType.Fixed     => StockIconHelper.GetStockIconBase64(StockIconHelper.SHSTOCKICONID.SIID_DRIVEFIXED) ?? "icons/hdd.png",
+        _                   => StockIconHelper.GetStockIconBase64(StockIconHelper.SHSTOCKICONID.SIID_DRIVEFIXED) ?? "icons/hdd.png",
+    };
+
+    private static string FormatBytes(double mb)
+    {
+        if (mb >= 1024 * 1024) return $"{mb / 1024.0 / 1024.0:0.0} TB";
+        if (mb >= 1024)        return $"{mb / 1024.0:0.0} GB";
+        return $"{mb:0} MB";
+    }
+
+    // ---------- Tile actions ----------
+    private void LaunchSteam()     => TryStart(SteamPath);
+    private void LaunchBattleNet() => TryStart(BattleNetPath);
+    private void LaunchXbox()      => TryStart(XboxPath);
+    private void OpenGamesFolder() => TryStart("explorer.exe", @"C:\Games");
+
+    private static void TryStart(string fileName, string args = null)
+    {
+        if (string.IsNullOrWhiteSpace(fileName)) return;
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo(fileName) { UseShellExecute = true };
+            if (!string.IsNullOrWhiteSpace(args)) psi.Arguments = args;
+            System.Diagnostics.Process.Start(psi);
+        }
+        catch { /* optional toast */ }
+    }
+
+    private void SetSteamExe()     => PickExe(p => SteamPath = p, "Steam");
+    private void SetBattleNetExe() => PickExe(p => BattleNetPath = p, "Battle.net");
+    private void SetXboxExe()      => PickExe(p => XboxPath = p, "Xbox");
+
+    private void PickExe(Action<string> setter, string title)
+    {
+        using var ofd = new System.Windows.Forms.OpenFileDialog
+        {
+            Title = $"Select {title} executable",
+            Filter = "Executable (*.exe)|*.exe|All files (*.*)|*.*",
+            CheckFileExists = true
+        };
+        if (ofd.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        {
+            setter(ofd.FileName);
+            SaveExePaths();
+            StateHasChanged();
+        }
+    }
+
+    // ---------- Simple persistence in %LOCALAPPDATA%\LegionLauncher\settings.json ----------
+    private string SettingsDir => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "LegionLauncher");
+    private string SettingsFile => Path.Combine(SettingsDir, "settings.json");
+
+    private void LoadExePaths()
+    {
+        try
+        {
+            if (!File.Exists(SettingsFile)) return;
+            var json = File.ReadAllText(SettingsFile);
+            var s = System.Text.Json.JsonSerializer.Deserialize<LauncherSettings>(json);
+            if (s is not null)
+            {
+                SteamPath = s.SteamExe;
+                BattleNetPath = s.BattleNetExe;
+                XboxPath = s.XboxExe;
+            }
+        }
+        catch { }
+    }
+
+    private void SaveExePaths()
+    {
+        try
+        {
+            Directory.CreateDirectory(SettingsDir);
+            var s = new LauncherSettings { SteamExe = SteamPath, BattleNetExe = BattleNetPath, XboxExe = XboxPath };
+            var json = System.Text.Json.JsonSerializer.Serialize(s, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(SettingsFile, json);
+        }
+        catch { }
+    }
+
+    private sealed class LauncherSettings
+    {
+        public string SteamExe { get; set; }
+        public string BattleNetExe { get; set; }
+        public string XboxExe { get; set; }
+    }
+
+    // ---------- Real icons from EXEs ----------
+    private static string GetExeIconDataUrl(string exePath, int size = 64)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(exePath) || !File.Exists(exePath)) return null;
+            using var ico = System.Drawing.Icon.ExtractAssociatedIcon(exePath);
+            if (ico is null) return null;
+            using var bmp = new System.Drawing.Bitmap(ico.ToBitmap(), new System.Drawing.Size(size, size));
+            using var ms = new MemoryStream();
+            bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+            return $"data:image/png;base64,{Convert.ToBase64String(ms.ToArray())}";
+        }
+        catch { return null; }
+    }
+
+    // ---------- Win32: Total RAM ----------
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+    private class MEMORYSTATUSEX
+    {
+        public uint dwLength = (uint)System.Runtime.InteropServices.Marshal.SizeOf(typeof(MEMORYSTATUSEX));
+        public uint dwMemoryLoad;
+        public ulong ullTotalPhys;
+        public ulong ullAvailPhys;
+        public ulong ullTotalPageFile;
+        public ulong ullAvailPageFile;
+        public ulong ullTotalVirtual;
+        public ulong ullAvailVirtual;
+        public ulong ullAvailExtendedVirtual;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto, SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool GlobalMemoryStatusEx([System.Runtime.InteropServices.In, System.Runtime.InteropServices.Out] MEMORYSTATUSEX lpBuffer);
+
+    private static ulong GetTotalPhysicalMemory()
+    {
+        var s = new MEMORYSTATUSEX();
+        return GlobalMemoryStatusEx(s) ? s.ullTotalPhys : 0;
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _pcMemAvailMb?.Dispose();
+        _pcCpuTotal?.Dispose();
     }
 }

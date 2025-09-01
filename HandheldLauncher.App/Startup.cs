@@ -1,4 +1,5 @@
 using HandheldLauncher.App.Data;
+using HandheldLauncher.App.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Radzen;
@@ -22,6 +23,10 @@ namespace HandheldLauncher.App
             services.AddWindowsFormsBlazorWebView();
             services.AddRadzenComponents();
             services.AddSingleton<WeatherForecastService>();
+            var launcherSettingsService = new LauncherSettingsService("HandheldLauncher");
+            services.AddSingleton(launcherSettingsService);
+            launcherSettingsService.LoadAsync().GetAwaiter().GetResult();
+
 
 #if DEBUG
             services.AddBlazorWebViewDeveloperTools();
