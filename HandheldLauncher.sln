@@ -1,8 +1,22 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.9.34728.123
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HandheldLauncher.App", "HandheldLauncher.App\HandheldLauncher.App.csproj", "{A03545A8-1B07-4A58-98DB-3ED47526BCCF}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A03545A8-1B07-4A58-98DB-3ED47526BCCF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A03545A8-1B07-4A58-98DB-3ED47526BCCF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A03545A8-1B07-4A58-98DB-3ED47526BCCF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A03545A8-1B07-4A58-98DB-3ED47526BCCF}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
 	EndGlobalSection
 EndGlobal
