@@ -1,5 +1,9 @@
 ﻿@inherits LayoutComponentBase
 
+<HeadContent>
+	<RadzenTheme Theme="material-dark" />
+</HeadContent>
+<RadzenComponents />
 <div class="page">
 	<div class="sidebar">
 		<NavMenu />
@@ -16,8 +20,13 @@
 	</main>
 </div>
 
+<RadzenDialog/>
+<RadzenNotification/>
+<RadzenContextMenu/>
+<RadzenTooltip/>
+
 @code {
-	private string? divStyle;
+	private string divStyle;
 
 	protected override void OnInitialized()
 	{

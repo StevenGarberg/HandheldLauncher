@@ -1,6 +1,7 @@
 using HandheldLauncher.App.Data;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Radzen;
 
 namespace HandheldLauncher.App
 {
@@ -19,6 +20,7 @@ namespace HandheldLauncher.App
         private static void WireupServices(IServiceCollection services)
         {
             services.AddWindowsFormsBlazorWebView();
+            services.AddRadzenComponents();
             services.AddSingleton<WeatherForecastService>();
 
 #if DEBUG

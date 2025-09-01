@@ -16,6 +16,7 @@
     <ItemGroup>
         <PackageReference Include="Microsoft.AspNetCore.Components.WebView.WindowsForms" Version="8.*" />
         <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.*" />
+        <PackageReference Include="Radzen.Blazor" Version="7.3.2" />
     </ItemGroup>
 
     <ItemGroup>

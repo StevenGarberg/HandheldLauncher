@@ -2,6 +2,15 @@
 
 <h1>Hello, world!</h1>
 
-Welcome to your new app.
+@Clicks clicks!
 
-<SurveyPrompt Title="How is Blazor working for you?" />
+<RadzenButton ButtonStyle="ButtonStyle.Success" Click="@ButtonClicked" Text="Hi"/>
+
+@code {
+    private int Clicks { get; set; }
+    
+    void ButtonClicked()
+    {
+        Clicks++;
+    }
+}
