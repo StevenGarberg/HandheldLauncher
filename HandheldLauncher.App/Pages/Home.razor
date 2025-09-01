@@ -1,7 +1,150 @@
 ﻿@page "/"
 
-<h1>Hello, world!</h1>
+<h2>System Dashboard</h2>
 
-Welcome to your new app.
+<div class="system-grid">
+    <!-- RAM Usage -->
+    <div class="system-card">
+        <h3>Memory Usage</h3>
+        <div class="ram-info">
+            <div class="ram-label">@FormatBytes(UsedMemory) used of @FormatBytes(TotalMemory)</div>
+            <div class="ram-bar">
+                <div class="ram-bar-fill" style="width:@RamUsagePercentage%;"></div>
+            </div>
+        </div>
+    </div>
 
-<SurveyPrompt Title="How is Blazor working for you?" />
+    <!-- Drives -->
+    <div class="system-card drives-card">
+        <h3>Drives</h3>
+        <div class="drive-grid">
+            @foreach (var drive in Drives)
+            {
+                <div class="drive-card">
+                    <div class="drive-header">
+                        <img class="drive-icon" src="@GetDriveIcon(drive)" alt="Drive Icon" />
+                        <div>
+                            <strong>@drive.Name</strong>
+                            <div class="drive-type">@drive.DriveType</div>
+                        </div>
+                    </div>
+
+                    @if (drive.IsReady)
+                    {
+                        <div class="drive-info">
+                            <div class="drive-space-label">
+                                @FormatBytes(drive.AvailableFreeSpace / 1024.0 / 1024.0) free of @FormatBytes(drive.TotalSize / 1024.0 / 1024.0)
+                            </div>
+                            <div class="drive-bar">
+                                <div class="drive-bar-fill"
+                                     style="width:@GetUsedPercentage(drive)%; background-color:@GetUsageColor(drive);">
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="drive-not-ready">Drive not ready</div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<System.IO.DriveInfo> Drives = new();
+    private double UsedMemory;
+    private double TotalMemory;
+    private double RamUsagePercentage => TotalMemory == 0 ? 0 : Math.Round((UsedMemory / TotalMemory) * 100, 1);
+
+    private System.Threading.Timer? timer;
+
+    protected override void OnInitialized()
+    {
+        Drives = System.IO.DriveInfo.GetDrives().ToList();
+        UpdateMemory();
+        timer = new System.Threading.Timer(_ =>
+        {
+            UpdateMemory();
+            InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
+    }
+
+    private void UpdateMemory()
+    {
+        TotalMemory = GetTotalPhysicalMemory() / 1024.0 / 1024.0; // bytes -> MB
+
+        using var pc = new System.Diagnostics.PerformanceCounter("Memory", "Available MBytes");
+        double availableMb = pc.NextValue();
+        UsedMemory = TotalMemory - availableMb;
+    }
+
+    private static ulong GetTotalPhysicalMemory()
+    {
+        MEMORYSTATUSEX memStatus = new MEMORYSTATUSEX();
+        if (GlobalMemoryStatusEx(memStatus))
+        {
+            return memStatus.ullTotalPhys;
+        }
+        return 0;
+    }
+
+    private string FormatBytes(double mb)
+    {
+        if (mb > 1024)
+            return $"{mb / 1024:0.0} GB";
+        return $"{mb:0} MB";
+    }
+
+    private double GetUsedPercentage(System.IO.DriveInfo drive)
+    {
+        if (!drive.IsReady || drive.TotalSize == 0)
+            return 0;
+
+        double used = drive.TotalSize - drive.AvailableFreeSpace;
+        return Math.Round((used / drive.TotalSize) * 100, 1);
+    }
+
+    private string GetUsageColor(System.IO.DriveInfo drive)
+    {
+        double percent = GetUsedPercentage(drive);
+        return percent > 90 ? "#d9534f" : "#4285f4";
+    }
+
+    private string GetDriveIcon(System.IO.DriveInfo drive)
+    {
+        return drive.DriveType switch
+        {
+            System.IO.DriveType.CDRom => "icons/cdrom.png",
+            System.IO.DriveType.Network => "icons/network.png",
+            System.IO.DriveType.Removable => "icons/usb.png",
+            System.IO.DriveType.Fixed => "icons/hdd.png",
+            _ => "icons/drive.png"
+        };
+    }
+
+    public void Dispose()
+    {
+        timer?.Dispose();
+    }
+
+    // ---- Win32 API Struct & PInvoke ----
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+    private class MEMORYSTATUSEX
+    {
+        public uint dwLength = (uint)System.Runtime.InteropServices.Marshal.SizeOf(typeof(MEMORYSTATUSEX));
+        public uint dwMemoryLoad;
+        public ulong ullTotalPhys;
+        public ulong ullAvailPhys;
+        public ulong ullTotalPageFile;
+        public ulong ullAvailPageFile;
+        public ulong ullTotalVirtual;
+        public ulong ullAvailVirtual;
+        public ulong ullAvailExtendedVirtual;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto, SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool GlobalMemoryStatusEx([System.Runtime.InteropServices.In, System.Runtime.InteropServices.Out] MEMORYSTATUSEX lpBuffer);
+}
