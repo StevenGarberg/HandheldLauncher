@@ -7,7 +7,7 @@
         <UseWindowsForms>true</UseWindowsForms>
 
         <!-- Project Options -->
-        <Nullable>enable</Nullable>
+        <Nullable>disable</Nullable>
         <LangVersion>latest</LangVersion>
         <ImplicitUsings>enable</ImplicitUsings>
         <RootNamespace>HandheldLauncher.App</RootNamespace>

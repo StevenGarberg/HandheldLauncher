@@ -13,7 +13,7 @@ namespace HandheldLauncher.App
                 Dock = DockStyle.Fill,
                 HostPage = "wwwroot/index.html",
                 Services = Startup.Services!,
-                StartPath = "/counter"
+                StartPath = "/"
             };
 
             bwv.RootComponents.Add<Main>("#app");
